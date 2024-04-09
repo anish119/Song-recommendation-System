@@ -1,0 +1,67 @@
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+import sqlite3
+
+# Set up Spotify API credentials
+client_id = 'ffdf830423f448da8b7e8312fa6bef58'
+client_secret = '50bdd1dcd16541ecb862442bb963bdb4'
+client_credentials_manager = spotipy.oauth2.SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
+sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+# Set up playlist URL
+playlist_url = 'https://open.spotify.com/playlist/5pDJBBolxeBiksPmzHBeI9?si=4c9258ad5fb44f0c'
+
+# Extract playlist ID from URL
+playlist_id = playlist_url.split('/')[-1].split('?')[0]
+
+# Connect to SQLite database
+conn = sqlite3.connect('spotify_tracks.db')
+c = conn.cursor()
+
+# Create table to store track data (if not exists)
+c.execute('''CREATE TABLE IF NOT EXISTS tracks (
+              id INTEGER PRIMARY KEY,
+              name TEXT,
+              artist TEXT,
+              album TEXT,
+              popularity REAL)''')
+
+
+def store_playlist_tracks(playlist_id):
+  """
+  Retrieves and stores information for all tracks in a Spotify playlist.
+
+  Args:
+      playlist_id: The ID of the playlist to process.
+  """
+  results = sp.playlist(playlist_id)
+  tracks = results['tracks']['items']
+  next_token = results.get('next')
+
+  # Process retrieved tracks
+  for track in tracks:
+    track_data = track['track']
+    c.execute("INSERT INTO tracks (name, artist, album, popularity) VALUES (?, ?, ?, ?)",
+              (track_data['name'], track_data['artists'][0]['name'], track_data['album']['name'], track_data['popularity']))
+
+  # Handle pagination if next token exists
+  while next_token:
+    results = sp.playlist_tracks(playlist_id, limit=100, offset=0, additional_params={"next": next_token})
+    tracks = results['items']
+    next_token = results.get('next')
+    
+    # Process retrieved tracks from next page
+    for track in tracks:
+      track_data = track['track']
+      c.execute("INSERT INTO tracks (name, artist, album, popularity) VALUES (?, ?, ?, ?)",
+                (track_data['name'], track_data['artists'][0]['name'], track_data['album']['name'], track_data['popularity']))
+
+  conn.commit()
+  print("All track data from playlist stored in database.")
+
+
+# Call function to store playlist tracks
+store_playlist_tracks(playlist_id)
+
+# Close connection
+conn.close()
